@@ -1,61 +1,48 @@
-import pandas as pd
-from flask import Flask, request, jsonify
 import joblib
+import pandas as pd
+import numpy as np
+from flask import Flask, request, jsonify
+from model_class import MergedModel  # <--- السطر ده مهم
 
-# Load merged model
-merged = joblib.load("merged_model.pkl")
-
+# 1. تهيئة تطبيق فلاسك
 app = Flask(__name__)
 
-# Columns required by the model
-FEATURES = ["Chromosome", "Gene", "Variant_Type", "CLNSIG", "Risk_Prob", "Risk_Level"]
+# 2. تحميل المودل
+print("Loading model...")
+try:
+    model = joblib.load("merged_model.pkl")
+    print("Model loaded successfully.")
+except Exception as e:
+    print(f"Error loading model: {e}")
+    model = None
 
-@app.route("/")
-def home():
-    return jsonify({"message": "Genomic AI Model API is running"})
-
-
-@app.route("/predict_csv", methods=["POST"])
-def predict_csv():
-    if "file" not in request.files:
-        return jsonify({"error": "CSV file is required"}), 400
-
-    file = request.files["file"]
-
+# ... باقي الكود بتاع الـ endpoints زي ما هو ...
+@app.route('/predict', methods=['POST'])
+def predict():
+    if model is None:
+        return jsonify({"error": "Model could not be loaded"}), 500
+        
     try:
-        df = pd.read_csv(file)
-    except Exception:
-        return jsonify({"error": "Invalid CSV format"}), 400
+        input_data = request.get_json()
+        if not input_data:
+            return jsonify({"error": "No input data provided"}), 400
 
-    results = []
+        disease, treatment = model.predict(input_data)
 
-    for idx, row in df.iterrows():
-        try:
-            input_dict = {
-                "Chromosome": str(row["Chromosome"]),
-                "Gene": str(row["Gene"]),
-                "Variant_Type": str(row["Variant_Type"]),
-                "CLNSIG": str(row["CLNSIG"]),
-                "Risk_Prob": float(row["Risk_Prob"]),
-                "Risk_Level": str(row["Risk_Level"])
-            }
+        return jsonify({
+            "predicted_disease": disease,
+            "predicted_treatment": treatment
+        })
 
-            disease, treatment = merged.predict(input_dict)
+    except ValueError as ve:
+        return jsonify({"error": str(ve)}), 400
+    except Exception as e:
+        print(f"Prediction error: {e}")
+        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
 
-            results.append({
-                "ID": row.get("ID", f"row_{idx}"),
-                "Disease": disease,
-                "Treatment": treatment
-            })
+@app.route('/', methods=['GET'])
+def home():
+    return "Genomic Model API is running!"
 
-        except Exception as e:
-            results.append({
-                "ID": row.get("ID", f"row_{idx}"),
-                "error": str(e)
-            })
-
-    return jsonify({"predictions": results})
-
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
